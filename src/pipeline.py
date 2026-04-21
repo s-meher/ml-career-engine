@@ -14,6 +14,7 @@ from . import evaluate
 from . import features
 from . import interpret
 from . import models
+from . import persistence
 from . import preprocess
 
 
@@ -76,6 +77,7 @@ def run_training_pipeline(csv_path: str) -> dict[str, Any]:
         - ``metrics``: nested dict by model slug, then ``"validation"`` /
           ``"test"`` with accuracy / precision / recall / f1
         - ``figures``: nested dict of saved confusion matrix paths (Path objects)
+        - ``artifacts``: paths to saved ``.joblib`` files (LR, RF, vectorizer)
     """
     raw = data_io.load_dataset(csv_path)
     train_df, val_df, test_df = data_io.split_dataset(raw)
@@ -118,6 +120,11 @@ def run_training_pipeline(csv_path: str) -> dict[str, Any]:
         figure_paths[name]["validation"] = p_val
         figure_paths[name]["test"] = p_test
 
+    artifact_paths = persistence.save_training_artifacts(lr, rf, vectorizer)
+    print("\nSaved model artifacts:")
+    for key, artifact_path in artifact_paths.items():
+        print(f"  {key}: {artifact_path.resolve()}")
+
     return {
         "train_df": train_df,
         "val_df": val_df,
@@ -130,6 +137,7 @@ def run_training_pipeline(csv_path: str) -> dict[str, Any]:
         },
         "metrics": metrics,
         "figures": figure_paths,
+        "artifacts": artifact_paths,
     }
 
 
