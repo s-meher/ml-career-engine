@@ -52,3 +52,13 @@ def load_training_artifacts(directory: Path | None = None) -> dict[str, Any]:
         "random_forest": joblib.load(out_dir / _RF_NAME),
         "vectorizer": joblib.load(out_dir / _VEC_NAME),
     }
+
+
+def load_logistic_regression_and_vectorizer(
+    directory: Path | None = None,
+) -> tuple[LogisticRegression, TfidfVectorizer]:
+    """Load only the Logistic Regression model and TF-IDF vectorizer (e.g. for inference UI)."""
+    out_dir = directory if directory is not None else config.MODELS_DIR
+    lr = joblib.load(out_dir / _LR_NAME)
+    vec = joblib.load(out_dir / _VEC_NAME)
+    return lr, vec
