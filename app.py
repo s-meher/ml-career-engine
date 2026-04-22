@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Streamlit demo: Career Decision Engine
-(job fit + skill gap using saved Logistic Regression + TF-IDF).
+Streamlit demo UI: Career Decision Engine
+
+This file focuses on UI/UX and presentation. It does NOT change ML logic.
+Inference uses saved Logistic Regression + TF-IDF artifacts and calls the
+existing helper `run_single_prediction(...)`.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import streamlit as st
 from src.interpret import get_top_terms_per_class
 from src.persistence import load_logistic_regression_and_vectorizer
 from src.pipeline import run_single_prediction
+
 
 DEFAULT_SKILL_LIST = [
     "python",
@@ -37,12 +41,12 @@ DEFAULT_SKILL_LIST = [
     "scrum",
 ]
 
-SAMPLE_SWE_RESUME = """Software Engineer — 4 years building backend services and APIs.
+SAMPLE_SWE_RESUME = """Software Engineer (Backend) - 4 years building backend services and APIs.
 Python (FastAPI, Django), PostgreSQL, Redis, Docker, and AWS (ECS, Lambda).
 Experience with CI/CD (GitHub Actions), code review, and mentoring interns.
 Computer Science B.S.; contributed to internal observability tooling."""
 
-SAMPLE_SWE_JD = """Senior Backend Engineer — We need strong Python, REST API design,
+SAMPLE_SWE_JD = """Senior Backend Engineer - We need strong Python, REST API design,
 PostgreSQL, and cloud experience (AWS preferred). Docker/Kubernetes a plus.
 You will design scalable services, write tests, and collaborate with product."""
 
@@ -50,159 +54,164 @@ SAMPLE_DA_RESUME = """Data Analyst with SQL, Excel, and dashboard experience.
 Built weekly reports for marketing; comfortable with stakeholder presentations.
 Familiar with Python basics and data cleaning; eager to grow in analytics."""
 
-SAMPLE_DA_JD = """Data Analyst — Seeking SQL, Python, Pandas, and experience with BI tools.
+SAMPLE_DA_JD = """Data Analyst - Seeking SQL, Python, Pandas, and experience with BI tools.
 Machine learning exposure is a plus. You will support forecasting models,
 maintain dashboards, and partner with finance on KPI definitions."""
 
+
 _PAGE_CSS = """
 <style>
-  html, body, [class*="css"]  {
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  /* Typography */
+  html, body, [class*="css"]  { font-family: "Times New Roman", Times, serif !important; }
+  :root {
+    --bg: #F8FAFC; --text: #0F172A; --text2: #475569; --muted: #64748B;
+    --card: #FFFFFF; --border: #E2E8F0;
+    --blue: #1D4ED8; --blueHover: #1E40AF; --softBlue: #EFF6FF;
+    --green: #16A34A; --greenBg: #DCFCE7;
+    --amber: #D97706; --amberBg: #FEF3C7;
+    --red: #DC2626; --redBg: #FEE2E2;
   }
+
+  body { background: var(--bg) !important; color: var(--text) !important; }
+  [data-testid="stAppViewContainer"] { background: var(--bg) !important; }
+  /* Remove Streamlit's translucent top header overlay (ghosted bar) */
+  [data-testid="stHeader"] { display: none !important; }
+  #MainMenu { visibility: hidden; }
+  footer { visibility: hidden; }
 
   .block-container {
-    padding-top: 1.5rem !important;
-    padding-bottom: 3rem !important;
-    max-width: 920px !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
+    max-width: 1100px !important;
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+    padding-top: 18px !important;
+    padding-bottom: 32px !important;
   }
 
+  /* Header hierarchy */
   .hero-title {
-    font-size: 2.1rem;
+    font-size: 40px;
     font-weight: 700;
-    letter-spacing: -0.03em;
-    color: #0f172a;
-    margin-bottom: 0.35rem;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    margin: 0 0 10px 0;
     line-height: 1.15;
   }
-
-  .hero-sub {
-    font-size: 1.05rem;
-    color: #475569;
-    margin-bottom: 0.75rem;
-    line-height: 1.45;
+  .hero-subtitle {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text2);
+    margin: 0 0 12px 0;
+    line-height: 1.4;
+  }
+  .pill {
+    display: inline-flex; align-items: center;
+    font-size: 14px; font-weight: 600; color: var(--text);
+    background: var(--softBlue); border: 1px solid #bfdbfe;
+    border-radius: 999px; padding: 6px 12px;
+  }
+  .header-divider {
+    border-top: 1px solid var(--border);
+    margin: 18px 0 20px 0;
   }
 
-  .model-badge {
-    display: inline-block;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: #334155;
-    background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
-    border: 1px solid #cbd5e1;
-    border-radius: 999px;
-    padding: 0.28rem 0.75rem;
-    margin-bottom: 1.5rem;
-  }
+  .section-title { font-size: 22px; font-weight: 700; color: var(--text); margin: 0 0 10px 0; }
+  .helper { font-size: 16px; color: var(--text2); margin: 0 0 14px 0; }
 
-  .section-heading {
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #64748b;
-    margin: 0 0 0.5rem 0;
+  div[data-testid="stVerticalBlockBorderWrapper"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
   }
+  div[data-testid="stVerticalBlockBorderWrapper"] > div { padding: 20px 20px !important; }
 
-  .metric-placeholder {
-    border: 1px dashed #cbd5e1;
-    border-radius: 12px;
-    background: #f8fafc;
-    padding: 1rem 1.1rem;
-    min-height: 92px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+  div[data-testid="stTextArea"] textarea {
+    background: var(--bg) !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 16px !important;
+    color: var(--text) !important;
+    font-size: 16px !important;
+    line-height: 1.45 !important;
   }
-
-  .metric-placeholder span {
-    font-size: 0.8rem;
-    color: #94a3b8;
+  div[data-testid="stTextArea"] textarea:focus {
+    outline: none !important;
+    border: 2px solid #2563EB !important;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14) !important;
   }
+  label { color: var(--text) !important; font-weight: 600 !important; }
 
-  .metric-live {
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    background: #ffffff;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    padding: 1rem 1.1rem;
-    min-height: 92px;
-  }
-
-  .metric-live .label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #64748b;
-    margin-bottom: 0.35rem;
-  }
-
-  .metric-live .value {
-    font-size: 1.35rem;
-    font-weight: 700;
-    color: #0f172a;
-  }
-
-  .metric-live .hint {
-    font-size: 0.78rem;
-    color: #64748b;
-    margin-top: 0.25rem;
-  }
-
-  .explain-box {
-    border-left: 4px solid #3730a3;
-    background: #f8fafc;
-    border-radius: 0 10px 10px 0;
-    padding: 1rem 1.15rem;
-    margin-top: 1rem;
-    color: #334155;
-    font-size: 0.95rem;
-    line-height: 1.55;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  div[data-testid="stExpander"] {
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
   }
 
   div[data-testid="stButton"] > button[kind="primary"] {
-    background: linear-gradient(180deg, #1e3a5f 0%, #172554 100%) !important;
-    color: #f8fafc !important;
-    border: 1px solid #0f172a !important;
-    font-weight: 600 !important;
-    border-radius: 10px !important;
-    padding: 0.55rem 1rem !important;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12) !important;
+    background: var(--blue) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--blue) !important;
+    font-weight: 700 !important;
+    border-radius: 14px !important;
+    height: 52px !important;
+    box-shadow: 0 8px 18px rgba(29, 78, 216, 0.18) !important;
   }
-
   div[data-testid="stButton"] > button[kind="primary"]:hover {
-    background: linear-gradient(180deg, #234876 0%, #1e293b 100%) !important;
-    border-color: #0f172a !important;
+    background: var(--blueHover) !important;
+    border-color: var(--blueHover) !important;
   }
-
   div[data-testid="stButton"] > button[kind="secondary"] {
-    border-radius: 10px !important;
-    font-weight: 500 !important;
-    border: 1px solid #e2e8f0 !important;
     background: #ffffff !important;
-    color: #334155 !important;
+    color: var(--text) !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 14px !important;
+    font-weight: 600 !important;
+    height: 48px !important;
+    padding: 0 18px !important;
+    font-size: 16px !important;
+    white-space: nowrap !important;
+  }
+  div[data-testid="stButton"] > button[kind="secondary"]:hover {
+    border-color: #94A3B8 !important;
+    background: #F8FAFC !important;
   }
 
-  div[data-testid="stExpander"] {
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 12px !important;
-    background: #fafafa !important;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+  .metric-label { font-size: 14px; font-weight: 600; color: var(--muted); margin-bottom: 10px; }
+  .metric-value { font-size: 30px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; line-height: 1.1; }
+  .metric-sub { margin-top: 8px; font-size: 13px; color: var(--muted); }
+
+  .chip {
+    display: inline-flex; align-items: center;
+    font-size: 13px; font-weight: 700;
+    border-radius: 999px; padding: 6px 12px; margin-left: 10px;
+    border: 1px solid transparent; vertical-align: middle; white-space: nowrap;
+  }
+  .chip-good { color: var(--green); background: var(--greenBg); border-color: #bbf7d0; }
+  .chip-mod { color: var(--amber); background: var(--amberBg); border-color: #fde68a; }
+  .chip-poor { color: var(--red); background: var(--redBg); border-color: #fecaca; }
+
+  .explain-panel {
+    background: var(--softBlue);
+    border: 1px solid #bfdbfe;
+    border-radius: 16px;
+    padding: 16px;
+    color: var(--text);
+    font-size: 16px;
+    line-height: 1.45;
   }
 
-  .chart-wrap {
-    margin-top: 0.5rem;
-    padding: 0.5rem 0;
+  .skill-chip {
+    display: inline-flex; align-items: center;
+    border-radius: 999px; padding: 6px 10px;
+    font-size: 13px; font-weight: 600;
+    margin: 0 8px 8px 0;
+    border: 1px solid transparent;
+    white-space: nowrap;
   }
+  .skill-match { background: var(--greenBg); color: #065f46; border-color: #bbf7d0; }
+  .skill-miss-red { background: var(--redBg); color: #991b1b; border-color: #fecaca; }
 
-  textarea {
-    border-radius: 10px !important;
-  }
+  .empty { color: var(--muted); font-size: 13px; }
 </style>
 """
 
@@ -222,10 +231,9 @@ def _cached_lr_and_vectorizer():
 
 
 def _confidence_display(result: dict) -> tuple[str, str]:
-    """Return (main value string, subtitle) for confidence metric."""
     probs = result.get("class_probabilities")
     if not probs:
-        return "—", "Model has no probability scores"
+        return "-", "Model has no probability scores"
     pred = str(result["predicted_label"])
     p = probs.get(pred)
     if p is None:
@@ -234,76 +242,107 @@ def _confidence_display(result: dict) -> tuple[str, str]:
     return f"{p:.0%}", f"For predicted class: {pred}"
 
 
-def _build_why_explanation(
-    result: dict,
-    top_terms: list[tuple[str, float]] | None,
-) -> str:
-    pred = html.escape(str(result["predicted_label"]))
-    parts = [
-        "The <strong>Logistic Regression</strong> model turns your combined résumé + job text into "
-        "<strong>TF-IDF</strong> features, then picks the class with the highest score. "
-        f"It predicted <strong>{pred}</strong>.",
-    ]
-    probs = result.get("class_probabilities")
-    if probs and str(result["predicted_label"]) in probs:
-        pk = str(result["predicted_label"])
-        pval = probs[pk]
-        parts.append(
-            f"Estimated probability for that class is <strong>{pval:.0%}</strong> "
-            "(multiclass softmax over the training labels)."
-        )
-    if top_terms:
-        top3 = ", ".join(f"<strong>{html.escape(t[0])}</strong>" for t in top_terms[:3])
-        parts.append(
-            f"Among the strongest positive contributors for <code>{pred}</code> are: {top3}. "
-            "These are interpretable n-grams weighted by learned coefficients."
-        )
-    parts.append(
-        f"The <strong>skill match score ({result['match_score']:.0%})</strong> is separate: it measures "
-        "how many skills from your list appear in <em>both</em> texts vs. skills found only in the job text."
-    )
-    return " ".join(parts)
+def _normalize_fit_label(label: str) -> str:
+    s = str(label).strip().lower().replace("-", " ").replace("_", " ")
+    s = " ".join(s.split())
+    if "good" in s:
+        return "good_fit"
+    if "poor" in s or "weak" in s:
+        return "poor_fit"
+    return "moderate_fit"
+
+
+def _fit_badge_html(label: str) -> str:
+    norm = _normalize_fit_label(label)
+    if norm == "good_fit":
+        return '<span class="chip chip-good">Good fit</span>'
+    if norm == "poor_fit":
+        return '<span class="chip chip-poor">Poor fit</span>'
+    return '<span class="chip chip-mod">Moderate fit</span>'
+
+
+def _short_result_sentence(result: dict) -> str:
+    matched = list(result.get("matched_skills") or [])
+    missing = list(result.get("missing_skills") or [])
+
+    def _join(items: list[str], max_n: int) -> str:
+        items = [str(x) for x in items if str(x).strip()]
+        if not items:
+            return ""
+        if len(items) <= max_n:
+            if len(items) == 1:
+                return items[0]
+            if len(items) == 2:
+                return f"{items[0]} and {items[1]}"
+            return ", ".join(items[:-1]) + f", and {items[-1]}"
+        shown = items[:max_n]
+        rest = len(items) - max_n
+        return ", ".join(shown[:-1]) + f", and {shown[-1]} (+{rest} more)"
+
+    matched_part = _join(matched, 3)
+    missing_part = _join(missing, 2)
+
+    if matched_part and missing_part:
+        return f"Strong overlap in {matched_part}, but missing {missing_part} lowered the fit score."
+    if matched_part and not missing_part:
+        return f"Strong overlap in {matched_part}, with no major gaps detected from your skill list."
+    if (not matched_part) and missing_part:
+        return f"Limited overlap with your skill list; missing {missing_part} appears in the job text."
+    return "Skill overlap depends on your skill list; add more relevant skills for a clearer gap view."
+
+
+def _render_skill_chips(skills: list[str], variant: str) -> None:
+    if not skills:
+        st.markdown('<div class="empty">None</div>', unsafe_allow_html=True)
+        return
+    cls = "skill-chip skill-match" if variant == "matched" else "skill-chip skill-miss-red"
+    chips = "".join(f'<span class="{cls}">{html.escape(s)}</span>' for s in skills)
+    st.markdown(chips, unsafe_allow_html=True)
 
 
 def _plot_top_terms_chart(terms: list[tuple[str, float]], title: str) -> None:
     if not terms:
         return
-    n = min(8, len(terms))
-    labels = [t[0][:28] + ("…" if len(t[0]) > 28 else "") for t in terms[:n]]
-    values = [t[1] for t in terms[:n]]
+    top = terms[:5]
+    labels = [t[0][:34] + ("…" if len(t[0]) > 34 else "") for t in top]
+    values = [t[1] for t in top]
 
-    fig, ax = plt.subplots(figsize=(7, 3.2))
-    fig.patch.set_facecolor("#fafafa")
-    ax.set_facecolor("#fafafa")
-    bars = ax.barh(labels[::-1], values[::-1], color="#3730a3", height=0.55, alpha=0.88)
-    ax.set_xlabel("Coefficient (positive → supports this class)", fontsize=9, color="#475569")
-    ax.set_title(title, fontsize=11, fontweight="600", color="#0f172a", pad=10)
-    ax.tick_params(axis="both", labelsize=8, colors="#475569")
+    fig, ax = plt.subplots(figsize=(7.2, 3.9))
+    ax.set_facecolor("#ffffff")
+    fig.patch.set_facecolor("#ffffff")
+    ax.barh(labels[::-1], values[::-1], color="#1D4ED8", alpha=0.92, height=0.62)
+    ax.set_title(title, fontsize=12, fontweight="700", color="#0F172A", pad=10)
+    ax.set_xlabel("Coefficient (positive → supports this class)", fontsize=10, color="#475569")
+    ax.tick_params(axis="both", labelsize=9, colors="#475569")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     for s in ["left", "bottom"]:
-        ax.spines[s].set_color("#e2e8f0")
+        ax.spines[s].set_color("#E2E8F0")
+    ax.grid(axis="x", color="#E2E8F0", linewidth=1.0, alpha=0.9)
+    ax.set_axisbelow(True)
     plt.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
 
 
 def _plot_skill_counts_chart(matched: int, missing: int) -> None:
-    fig, ax = plt.subplots(figsize=(7, 2.8))
-    fig.patch.set_facecolor("#fafafa")
-    ax.set_facecolor("#fafafa")
-    cats = ["Matched", "Missing (in JD)"]
+    fig, ax = plt.subplots(figsize=(7.2, 3.9))
+    ax.set_facecolor("#ffffff")
+    fig.patch.set_facecolor("#ffffff")
+    cats = ["Matched", "Missing"]
     vals = [matched, missing]
-    colors = ["#059669", "#dc2626"]
-    ax.bar(cats, vals, color=colors, width=0.45, alpha=0.85, edgecolor="white", linewidth=1.2)
-    ax.set_ylabel("Count", fontsize=9, color="#475569")
-    ax.set_title("Skill list overlap (substring match)", fontsize=11, fontweight="600", color="#0f172a")
-    ax.set_ylim(0, max(vals + [1]) * 1.15)
+    colors = ["#16A34A", "#DC2626"]
+    ax.bar(cats, vals, color=colors, width=0.5, alpha=0.9, edgecolor="#ffffff", linewidth=1.2)
+    ax.set_title("Skill count comparison", fontsize=12, fontweight="700", color="#0F172A", pad=10)
+    ax.set_ylabel("Count", fontsize=10, color="#475569")
     ax.tick_params(axis="both", labelsize=9, colors="#475569")
+    ax.set_ylim(0, max(vals + [1]) * 1.15)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     for s in ["left", "bottom"]:
-        ax.spines[s].set_color("#e2e8f0")
+        ax.spines[s].set_color("#E2E8F0")
+    ax.grid(axis="y", color="#E2E8F0", linewidth=1.0, alpha=0.9)
+    ax.set_axisbelow(True)
     plt.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
@@ -319,27 +358,27 @@ def main() -> None:
     _init_session_state()
     st.markdown(_PAGE_CSS, unsafe_allow_html=True)
 
-    st.markdown('<p class="hero-title">Career Decision Engine</p>', unsafe_allow_html=True)
+    # Hero header
     st.markdown(
-        '<p class="hero-sub">Interpretable NLP model for resume–job fit and skill gap analysis</p>',
+        '<div class="hero-title">Career Decision Engine</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<span class="model-badge">Logistic Regression + TF-IDF</span>',
+        '<div class="hero-subtitle">Interpretable NLP model for resume-job fit and skill gap analysis</div>',
         unsafe_allow_html=True,
     )
+    st.markdown('<span class="pill">Logistic Regression + TF-IDF</span>', unsafe_allow_html=True)
+    st.markdown('<div class="header-divider"></div>', unsafe_allow_html=True)
 
-    # --- Input card ---
-    st.markdown('<p class="section-heading">Inputs</p>', unsafe_allow_html=True)
-    try:
-        input_wrap = st.container(border=True)
-    except TypeError:
-        input_wrap = st.container()
+    # Input card
+    with st.container(border=True):
+        st.markdown('<div class="section-title">Inputs</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="helper">Paste a resume and job description, or load a sample pair.</div>',
+            unsafe_allow_html=True,
+        )
 
-    with input_wrap:
-        st.caption("Paste a résumé and a job description, or load a sample pair.")
-
-        b1, b2, _ = st.columns([1, 1, 2])
+        b1, b2 = st.columns(2)
         with b1:
             if st.button("Load sample SWE pair", use_container_width=True):
                 st.session_state.resume_field = SAMPLE_SWE_RESUME
@@ -353,34 +392,34 @@ def main() -> None:
                 st.session_state.pop("last_result", None)
                 st.rerun()
 
+        st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
         c1, c2 = st.columns(2)
         with c1:
             st.text_area(
                 "Resume text",
-                height=200,
+                height=220,
                 placeholder="Paste your resume here…",
                 key="resume_field",
-                label_visibility="visible",
             )
         with c2:
             st.text_area(
                 "Job description",
-                height=200,
+                height=220,
                 placeholder="Paste the job description here…",
                 key="jd_field",
-                label_visibility="visible",
             )
 
         with st.expander("Skill list (substring overlap)", expanded=False):
-            st.caption("One skill or phrase per line. Used only for the skill-gap panel, not for TF-IDF training.")
-            st.text_area(
-                "Skills",
-                height=140,
-                key="skills_text",
-                label_visibility="collapsed",
+            st.markdown(
+                '<div class="helper" style="margin-bottom:8px">'
+                "One skill or phrase per line. Used only for the skill-gap panel (not model features)."
+                "</div>",
+                unsafe_allow_html=True,
             )
+            st.text_area("Skills", height=140, key="skills_text", label_visibility="collapsed")
 
-        analyze = st.button("Run analysis", type="primary", use_container_width=True)
+        analyze = st.button("Analyze Fit", type="primary", use_container_width=True)
 
     resume = st.session_state.resume_field
     jd = st.session_state.jd_field
@@ -402,92 +441,85 @@ def main() -> None:
             else:
                 try:
                     lr, vectorizer = _cached_lr_and_vectorizer()
-                except FileNotFoundError as exc:
-                    st.error(f"Could not load model files: {exc}")
                 except Exception as exc:
                     st.error(f"Error loading model or vectorizer: {exc}")
                 else:
                     with st.spinner("Preprocessing and scoring…"):
-                        result = run_single_prediction(
-                            resume, jd, lr, vectorizer, skill_list
-                        )
+                        result = run_single_prediction(resume, jd, lr, vectorizer, skill_list)
                     st.session_state["last_result"] = result
 
-    # --- Results dashboard (placeholders or live) ---
-    st.markdown('<p class="section-heading">Results dashboard</p>', unsafe_allow_html=True)
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
+    # Results dashboard
+    st.markdown('<div class="section-title">Results Dashboard</div>', unsafe_allow_html=True)
     result = st.session_state.get("last_result")
 
     m1, m2, m3 = st.columns(3)
     if not result:
         with m1:
-            st.markdown(
-                '<div class="metric-placeholder"><span>Predicted fit</span></div>',
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown('<div class="metric-label">Predicted Fit</div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-value">-</div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-sub">Run analysis to populate</div>', unsafe_allow_html=True)
         with m2:
-            st.markdown(
-                '<div class="metric-placeholder"><span>Confidence</span></div>',
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown('<div class="metric-label">Confidence</div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-value">-</div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-sub">Probability (if available)</div>', unsafe_allow_html=True)
         with m3:
-            st.markdown(
-                '<div class="metric-placeholder"><span>Skill match score</span></div>',
-                unsafe_allow_html=True,
-            )
-        st.caption("Run an analysis to populate these metrics.")
+            with st.container(border=True):
+                st.markdown('<div class="metric-label">Skill Match Score</div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-value">-</div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-sub">Coverage of JD skills</div>', unsafe_allow_html=True)
     else:
         conf_main, conf_sub = _confidence_display(result)
         with m1:
-            st.markdown(
-                f'<div class="metric-live"><div class="label">Predicted fit</div>'
-                f'<div class="value">{html.escape(str(result["predicted_label"]))}</div>'
-                f'<div class="hint">Multiclass LR on TF-IDF</div></div>',
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                badge = _fit_badge_html(str(result["predicted_label"]))
+                st.markdown('<div class="metric-label">Predicted Fit</div>', unsafe_allow_html=True)
+                st.markdown(
+                    f'<div class="metric-value">{html.escape(str(result["predicted_label"]))}{badge}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown('<div class="metric-sub">Logistic Regression on TF-IDF</div>', unsafe_allow_html=True)
         with m2:
-            st.markdown(
-                f'<div class="metric-live"><div class="label">Confidence</div>'
-                f'<div class="value">{html.escape(conf_main)}</div>'
-                f'<div class="hint">{html.escape(conf_sub)}</div></div>',
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown('<div class="metric-label">Confidence</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-value">{html.escape(conf_main)}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-sub">{html.escape(conf_sub)}</div>', unsafe_allow_html=True)
         with m3:
-            st.markdown(
-                f'<div class="metric-live"><div class="label">Skill match score</div>'
-                f'<div class="value">{result["match_score"]:.0%}</div>'
-                f'<div class="hint">JD skills also in résumé</div></div>',
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                st.markdown('<div class="metric-label">Skill Match Score</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="metric-value">{result["match_score"]:.0%}</div>', unsafe_allow_html=True)
+                st.markdown('<div class="metric-sub">Fraction of JD skills in resume</div>', unsafe_allow_html=True)
 
-    st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+        st.markdown(f'<div class="explain-panel">{html.escape(_short_result_sentence(result))}</div>', unsafe_allow_html=True)
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.markdown("**Matched skills**")
-        if result and result["matched_skills"]:
-            for s in result["matched_skills"]:
-                st.markdown(f"- `{s}`")
-        elif result:
-            st.caption("No overlap detected with your skill list.")
-        else:
-            st.caption("—")
-    with col_b:
-        st.markdown("**Missing skills** *(in job text, not résumé)*")
-        if result and result["missing_skills"]:
-            for s in result["missing_skills"]:
-                st.markdown(f"- `{s}`")
-        elif result:
-            st.caption("None flagged — nice coverage.")
-        else:
-            st.caption("—")
+    # Skills analysis
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Skills Analysis</div>', unsafe_allow_html=True)
+    s1, s2 = st.columns(2)
+    with s1:
+        with st.container(border=True):
+            st.markdown('<div class="metric-label" style="margin-bottom:12px">Matched Skills</div>', unsafe_allow_html=True)
+            if result:
+                _render_skill_chips(list(result.get("matched_skills") or []), "matched")
+            else:
+                st.markdown('<div class="empty">Run analysis to show matched skills.</div>', unsafe_allow_html=True)
+    with s2:
+        with st.container(border=True):
+            st.markdown('<div class="metric-label" style="margin-bottom:12px">Missing Skills</div>', unsafe_allow_html=True)
+            if result:
+                _render_skill_chips(list(result.get("missing_skills") or []), "missing")
+            else:
+                st.markdown('<div class="empty">Run analysis to show missing skills.</div>', unsafe_allow_html=True)
 
-    if result and result.get("resume_only_skills"):
-        with st.expander("Résumé-only skills (in résumé, not job text)", expanded=False):
-            for s in result["resume_only_skills"]:
-                st.markdown(f"- `{s}`")
+    # Charts
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Charts</div>', unsafe_allow_html=True)
 
-    top_terms: list[tuple[str, float]] | None = None
+    top_terms = None
     if result:
         try:
             lr, vectorizer = _cached_lr_and_vectorizer()
@@ -496,30 +528,24 @@ def main() -> None:
         except Exception:
             top_terms = None
 
-    if result:
-        st.markdown(
-            f'<div class="explain-box"><strong>Why this prediction?</strong><br><br>'
-            f'{_build_why_explanation(result, top_terms)}</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown('<p class="section-heading" style="margin-top:1.75rem">Charts</p>', unsafe_allow_html=True)
-    chart_c1, chart_c2 = st.columns(2)
-    with chart_c1:
-        st.caption("Top positive TF-IDF terms (predicted class)")
-        if top_terms:
-            _plot_top_terms_chart(top_terms, f"Class: {result['predicted_label']}")
-        else:
-            st.info("Run analysis to show coefficient-backed terms.")
-    with chart_c2:
-        st.caption("Skill counts (your list)")
-        if result:
-            _plot_skill_counts_chart(
-                len(result["matched_skills"]),
-                len(result["missing_skills"]),
-            )
-        else:
-            st.info("Run analysis to compare matched vs. missing skills.")
+    c1, c2 = st.columns(2)
+    with c1:
+        with st.container(border=True):
+            st.markdown('<div class="metric-label" style="margin-bottom:10px">Top Positive Terms</div>', unsafe_allow_html=True)
+            if top_terms:
+                _plot_top_terms_chart(top_terms, f"Top positive terms - {result['predicted_label']}")
+            else:
+                st.markdown('<div class="empty">Run analysis to display top terms.</div>', unsafe_allow_html=True)
+    with c2:
+        with st.container(border=True):
+            st.markdown('<div class="metric-label" style="margin-bottom:10px">Skill Count Comparison</div>', unsafe_allow_html=True)
+            if result:
+                _plot_skill_counts_chart(
+                    len(result.get("matched_skills") or []),
+                    len(result.get("missing_skills") or []),
+                )
+            else:
+                st.markdown('<div class="empty">Run analysis to compare skill counts.</div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
