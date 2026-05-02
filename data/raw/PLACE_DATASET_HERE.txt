@@ -1,0 +1,11 @@
+Place training dataset here as:
+
+job_fit_dataset.csv
+
+Required columns:
+- resume_text
+- job_description
+- label
+
+This folder is intentionally left empty in the submission package.
+Saved trained models are included in outputs/models/ for demo and inference without retraining.
